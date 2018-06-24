@@ -1,0 +1,686 @@
+---
+title: "HW3 Tardella - final project"
+author: "Valerio Rossini"
+output:
+  pdf_document: null
+  html_document: default
+  toc: yes
+header-includes: \usepackage{graphicx}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+--------------
+
+\newpage
+
+## Rats: a normal hierarchical model
+This example is taken from section 6 of Gelfand et al (1990), and concerns 30 young rats whose weights were measured weekly for five weeks. Part of the data is shown below, where $Y_{ij}$ is the weight of the ith rat measured at age $x_j$.
+
+```{r}
+rats.data  <- list(x = c(8.0, 15.0, 22.0, 29.0, 36.0), 
+                   N = 30, 
+                   T = 5,	
+                   xbar=22,
+                   Y = matrix(c(151, 199, 246, 283, 320,
+                                145, 199, 249, 293, 354,
+                                147, 214, 263, 312, 328,
+                                155, 200, 237, 272, 297,
+                                135, 188, 230, 280, 323,
+                                159, 210, 252, 298, 331,
+                                141, 189, 231, 275, 305,
+                                159, 201, 248, 297, 338,
+                                177, 236, 285, 350, 376,
+                                134, 182, 220, 260, 296,
+                                160, 208, 261, 313, 352,
+                                143, 188, 220, 273, 314,
+                                154, 200, 244, 289, 325,
+                                171, 221, 270, 326, 358,
+                                163, 216, 242, 281, 312,
+                                160, 207, 248, 288, 324,
+                                142, 187, 234, 280, 316,
+                                156, 203, 243, 283, 317,
+                                157, 212, 259, 307, 336,
+                                152, 203, 246, 286, 321,
+                                154, 205, 253, 298, 334,
+                                139, 190, 225, 267, 302,
+                                146, 191, 229, 272, 302,
+                                157, 211, 250, 285, 323,
+                                132, 185, 237, 286, 331,
+                                160, 207, 257, 303, 345,
+                                169, 216, 261, 295, 333,
+                                157, 205, 248, 289, 316,
+                                137, 180, 219, 258, 291,
+                                153, 200, 244, 286, 324),
+                              nrow=30, ncol=5, byrow=T))
+
+Y <- rats.data$Y
+Y
+T <- rats.data$T
+T
+x <-  rats.data$x
+x
+xbar <- rats.data$xbar
+xbar
+N <- rats.data$N
+N
+
+```
+
+We can represent graphically the growing curve of each rat in a single plot: 
+
+```{r}
+
+matplot(x, t(Y), type = "l", lwd = 2,
+        xlab = "age (days)", ylab = "weight")
+title(main= "growing curve of each rat")
+grid()
+```
+
+Possible analysis:
+\begin{enumerate}
+  \item each rat has its own line: intercept=$b_{i0}$, slope=$b_{i1}$
+  \item all rats follow the same line: $b_{i0}=\beta_0$, $b_{i1}=\beta_1$
+  \item a compromise between these two: each rat has its own line, BUT... the lines come from a common assumed distribution (a slope and intercept are estimated for each rat)
+\end{enumerate}
+
+
+The model is essentially a random effects linear growth curve
+$$Y_{ij} \sim Normal(\alpha_i+\beta_ix_j, \tau_c)$$
+$$\alpha_i \sim Normal(\alpha_c, \tau_\alpha)$$
+$$\beta_i \sim Normal(\beta_c, \tau_\beta)$$
+where $\tau$ represents the precision (1/variance) of a normal distribution
+
+$\alpha_c , \tau_\alpha , \beta_c , \tau_\beta , \tau_c$ are given independent "noninformative" priors. Interest particularly focuses on the intercept at zero time (birth), denoted $\alpha_0 = \alpha_c - \beta_c x_{bar}$
+
+$$\alpha_c \sim Normal(0, 1.0E-6)$$
+$$\tau_\alpha \sim Gamma(1.0E-3, 1.0E-3)$$
+$$\beta_c \sim Normal(0, 1.0E-6)$$
+$$\tau_\beta \sim Gamma(1.0E-3, 1.0E-3)$$
+$$\tau_c \sim Gamma(1.0E-3, 1.0E-3)$$
+
+The graphical model for rats example is given below:
+
+\includegraphics[width=\linewidth]{C:/Users/valer/OneDrive/Documenti/"Tardella R"/graphic.png}
+
+We can also fit a linear model for each rat predicting weight $Y$ from time $x_j$
+```{r}
+# frequentistic approach
+
+intercept_vec <- rep(NA,N)
+slope_vec <- rep(NA,N)
+for(i in 1:N)
+{
+  lmfit <- lm(rats.data$Y[i,] ~ rats.data$x)
+  intercept_vec[i] <- lmfit$coefficients[[1]]
+  slope_vec[i] <- lmfit$coefficients[[2]]
+}
+
+intercept_vec
+slope_vec
+
+# mean of intercept
+mean_alpha <- mean(intercept_vec)
+mean_alpha
+# mean of slope
+mean_beta <- mean(slope_vec)
+mean_beta
+
+plot(rats.data$x,colMeans(rats.data$Y), lwd=4, xlab = "age (days)", ylab = "weight", 
+     col="red", ylim=c(135,355))
+points(rep(rats.data$x[1],N), rats.data$Y[,1])
+points(rep(rats.data$x[2],N), rats.data$Y[,2])
+points(rep(rats.data$x[3],N), rats.data$Y[,3])
+points(rep(rats.data$x[4],N), rats.data$Y[,4])
+points(rep(rats.data$x[5],N), rats.data$Y[,5])
+abline(mean_alpha, mean_beta, col="lightblue", lwd=2)
+grid()
+```
+
+\newpage
+The likelihood function can be derived in this way:
+
+$$L(y_{ij}  | \alpha_i, \beta_i, \tau_c, x_j ) = \prod_{i=1}^N\prod_{j=1}^T\frac{1}{\sqrt{2\pi \tau_c^2}}\exp \left\{ \frac{-(y_{ij} - \mu_{ij})^2}{2\tau_c^2}\right\} 
+\propto \prod_{i=1}^N\prod_{j=1}^T \exp \left\{ \frac{-(y_{ij} - \mu_{ij})^2}{2\tau_c^2}\right\}$$ 
+$$\propto \exp \left \{-\frac{1}{2\tau_c^2} \sum_{i=1}^N \sum_{j=1}^T(y_{ij} - \mu_{ij})^2 \right\} \propto \exp \left \{-\frac{1}{2\tau_c^2} \sum_{i=1}^N \sum_{j=1}^T(y_{ij} - (\alpha_i + \beta_i x_j))^2 \right\}$$
+
+Before writing the expression of the joint prior distribution of the parameters, we need to compute separately the prior/hyperprior of each parameter:
+
+$$\pi(\alpha_i|\alpha_c,\tau_\alpha) = \prod_{i=1}^N \frac{1}{\sqrt{ 2\pi\tau_\alpha^2}} exp \left\{-\frac{(\alpha_i-\alpha_c)^2}{2\tau_\alpha^2} \right \} \propto \prod_{i=1}^N  exp \left\{-\frac{(\alpha_i-\alpha_c)^2}{2\tau_\alpha^2} \right \} \propto \exp \left \{-\frac{1}{2\tau_\alpha^2} \sum_{i=1}^N (\alpha_i - \alpha_c)^2 \right\}$$
+$$\pi(\alpha_c) = \frac{1}{\sqrt{ 2\pi (1.0E-6)^2}} exp \left\{-\frac{(\alpha_c-0)^2}{2(1.0E-6)^2} \right \} \propto exp \left\{-\frac{(\alpha_c-0)^2}{2(1.0E-6)^2} \right \} \propto exp \left\{-\frac{\alpha_c^2}{2(1.0E-6)^2} \right \}$$
+$$\pi(\tau_\alpha) = \frac{(1.0E-3)^{1.0E-3} \tau_\alpha^{(1.0E-3-1)}e^{-1.0E-3\tau_\alpha}}{\Gamma(1.0E-3)}$$
+
+$$\pi(\beta_i|\beta_c,\tau_\beta) = \prod_{i=1}^N \frac{1}{\sqrt{ 2\pi\tau_\beta^2}} exp \left\{-\frac{(\beta_i-\beta_c)^2}{2\tau_\beta^2} \right \} \propto \prod_{i=1}^N  exp \left\{-\frac{(\beta_i-\beta_c)^2}{2\tau_\beta^2} \right \} \propto \exp \left \{-\frac{1}{2\tau_\beta^2} \sum_{i=1}^N (\beta_i - \beta_c)^2 \right\}$$
+$$\pi(\beta_c) = \frac{1}{\sqrt{ 2\pi (1.0E-6)^2}} exp \left\{-\frac{(\beta_c-0)^2}{2(1.0E-6)^2} \right \} \propto exp \left\{-\frac{(\beta_c-0)^2}{2(1.0E-6)^2} \right \} \propto exp \left\{-\frac{\beta_c^2}{2(1.0E-6)^2} \right \}$$
+$$\pi(\tau_\beta) = \frac{(1.0E-3)^{1.0E-3} \tau_\beta^{(1.0E-3-1)}e^{-1.0E-3\tau_\beta}}{\Gamma(1.0E-3)}$$
+$$\pi(\tau_c) = \frac{(1.0E-3)^{1.0E-3} \tau_c^{(1.0E-3-1)}e^{-1.0E-3\tau_c}}{\Gamma(1.0E-3)}$$
+
+\newpage
+```{r}
+# load the library
+
+library(R2jags, quietly = T)
+library(mcmcplots, quietly = T)
+library(ggmcmc, quietly = T)
+library(corrplot, quietly = T)
+```
+
+\newpage
+## First model 
+
+In \textbf{Examples Volume 1 - Rats a normal hierarchical model}, we read: \textit{"for now, we standardise the $x_j$'s around their mean to reduce dependence between $\alpha_i$ and $\beta_i$ in their likelihood: in fact for the full balanced data, complete independence is achieved. (Note that, in general, prior independence does not force the posterior distributions to be independent)."}
+
+In this first model (and also in the other models) we don't standardise the $x_j$'s around their mean and we use the priors that we have introduced before, i.e.:
+$$\alpha_i \sim Normal(\alpha_c, \tau_\alpha)$$
+$$\beta_i \sim Normal(\beta_c, \tau_\beta)$$
+$$\alpha_c \sim Normal(0, 1.0E-6)$$
+$$\tau_\alpha \sim Gamma(1.0E-3, 1.0E-3)$$
+$$\beta_c \sim Normal(0, 1.0E-6)$$
+$$\tau_\beta \sim Gamma(1.0E-3, 1.0E-3)$$
+$$\tau_c \sim Gamma(1.0E-3,1.0E-3)$$
+
+```{r}
+# first model with prior 2 (tau.alpha and tau.beta are distributed as inverse gamma) 
+# and not centered variables 
+
+model <- function()
+{
+  for (i in 1:N) 
+  {
+    for (j in 1:T) 
+    {
+      Y[i,j] ~ dnorm(mu[i,j], tau.c)
+      mu[i, j] <- alpha[i] + beta[i] * (x[j])
+    }
+    alpha[i] ~ dnorm(alpha.c, tau.alpha)
+    beta[i] ~ dnorm(beta.c, tau.beta)
+  }
+    alpha.c ~ dnorm(0, 1.0E-6)
+    beta.c ~ dnorm(0, 1.0E-6)
+    tau.c ~ dgamma(1.0E-3, 1.0E-3)
+    tau.alpha ~ dgamma(1.0E-3, 1.0E-3)
+    tau.beta ~ dgamma(1.0E-3, 1.0E-3)
+    sigma.c <- 1.0/sqrt(tau.c)
+    xbar <- mean(x[])
+    alpha0 <- alpha.c - beta.c*xbar
+}
+
+## Read in the rats data for JAGS
+rats.data.list  <- list("Y", "x", "T", "N")
+
+## Name the JAGS parameters
+rats.params <- c("tau.c", "alpha.c", "beta.c", "tau.alpha", "tau.beta")
+
+## Define the starting values for JAGS
+rats.inits <- function(){
+  list(alpha = c(250, 250, 250, 250, 250, 250, 250, 250, 250, 250, 250, 250, 250, 250, 250, 
+                 250, 250, 250, 250, 250, 250, 250, 250, 250, 250, 250, 250, 250, 250, 250),
+       beta  = c(6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 
+                 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6),			
+       alpha.c = 150, beta.c = 10, 
+       tau.c = 1, tau.alpha = 1, tau.beta = 1)
+}
+
+mod1 <- jags(data=rats.data.list, inits=rats.inits, rats.params, n.chains=2, n.iter=10000, 
+             n.burnin=1000, n.thin = 1, model.file=model, DIC=TRUE)
+
+mod1
+
+# DIC
+mod1$BUGSoutput$DIC
+
+# mean of the intercept
+mod1$BUGSoutput$summary[,"mean"]["alpha.c"]
+
+# mean of the slope
+mod1$BUGSoutput$summary[,"mean"]["beta.c"]
+
+plot(rats.data$x,colMeans(rats.data$Y), lwd=4, xlab = "age (days)", ylab = "weight",
+     col="red", ylim=c(135,355))
+points(rep(rats.data$x[1],N), rats.data$Y[,1])
+points(rep(rats.data$x[2],N), rats.data$Y[,2])
+points(rep(rats.data$x[3],N), rats.data$Y[,3])
+points(rep(rats.data$x[4],N), rats.data$Y[,4])
+points(rep(rats.data$x[5],N), rats.data$Y[,5])
+abline(mod1$BUGSoutput$summary[,"mean"]["alpha.c"], 
+       mod1$BUGSoutput$summary[,"mean"]["beta.c"], col="blue", lwd=2)
+grid()
+
+# comparison with frequentistic approach
+plot(rats.data$x,colMeans(rats.data$Y), lwd=4, xlab = "age (days)", ylab = "weight",
+     col="red", ylim=c(135,355))
+points(rep(rats.data$x[1],N), rats.data$Y[,1])
+points(rep(rats.data$x[2],N), rats.data$Y[,2])
+points(rep(rats.data$x[3],N), rats.data$Y[,3])
+points(rep(rats.data$x[4],N), rats.data$Y[,4])
+points(rep(rats.data$x[5],N), rats.data$Y[,5])
+abline(mod1$BUGSoutput$summary[,"mean"]["alpha.c"], 
+       mod1$BUGSoutput$summary[,"mean"]["beta.c"], col="blue", lwd=8)
+abline(mean_alpha, mean_beta, col="lightblue", lwd=2)
+grid()
+
+```
+
+\newpage
+## Second model 
+
+In this second model we use other different priors for $\tau_\alpha$ and $\tau_\beta$ that are suggested in \textbf{Examples Volume 1 - Rats a normal hierarchical model}. 
+So our priors will be:
+
+$$\alpha_i \sim Normal(\alpha_c, \tau_\alpha)$$
+$$\beta_i \sim Normal(\beta_c, \tau_\beta)$$
+$$\alpha_c \sim Normal(0, 0.1E-6)$$
+$$\tau_\alpha \sim Unif(0, 100)$$
+$$\beta_c \sim Normal(0, 1.0E-6)$$
+$$\tau_\beta \sim Unif(0, 100)$$
+$$\tau_c \sim Gamma(1.0E-3, 1.0E-3)$$
+
+```{r}
+# second model with prior 1 (sigma.alpha and sigma.beta are distributed as uniform) 
+# and not centered variables 
+
+model2 <- function()
+{
+  for (i in 1:N) 
+  {
+    for (j in 1:T) 
+    {
+      Y[i,j] ~ dnorm(mu[i,j], tau.c)
+      mu[i, j] <- alpha[i] + beta[i] * (x[j])
+    }
+    alpha[i] ~ dnorm(alpha.c, tau.alpha)
+    beta[i] ~ dnorm(beta.c, tau.beta)
+  }
+  alpha.c ~ dnorm(0, 1.0E-6)
+  beta.c ~ dnorm(0, 1.0E-6)
+  tau.c ~ dgamma(1.0E-3, 1.0E-3)
+  sigma.alpha ~ dunif(0,100)
+  sigma.beta ~ dunif(0,100)
+  tau.alpha <- 1/(sigma.alpha*sigma.alpha)
+  tau.beta <- 1/(sigma.beta*sigma.beta)
+  sigma.c <- 1.0/sqrt(tau.c)
+  xbar <- mean(x[])
+  alpha0 <- alpha.c - beta.c*xbar
+}
+
+
+## Read in the rats data for JAGS
+rats.data.list  <- list("Y", "x", "T", "N")
+
+## Name the JAGS parameters
+rats.params <- c("tau.c", "alpha.c", "beta.c", "tau.alpha", "tau.beta")
+
+## Define the starting values for JAGS
+rats.inits.2 <- function(){
+  list(alpha = c(250, 250, 250, 250, 250, 250, 250, 250, 250, 250, 250, 250, 250, 250, 250, 
+                250, 250, 250, 250, 250, 250, 250, 250, 250, 250, 250, 250, 250, 250, 250),
+      beta  = c(6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 
+                6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6),			
+      alpha.c = 150, beta.c = 10, 
+      tau.c = 1, sigma.alpha = 1, sigma.beta = 1)
+}
+
+mod2 <- jags(data=rats.data.list, inits=rats.inits.2, rats.params, n.chains=2, n.iter=10000, 
+             n.burnin=1000, n.thin = 1, model.file=model2, DIC=TRUE)
+
+mod2
+mod2$BUGSoutput$DIC
+
+# mean of the intercept
+mod2$BUGSoutput$summary[,"mean"]["alpha.c"]
+
+# mean of the slope
+mod2$BUGSoutput$summary[,"mean"]["beta.c"]
+
+plot(rats.data$x,colMeans(rats.data$Y), lwd=4, xlab = "age (days)", ylab = "weight",
+     col="red", ylim=c(135,355))
+points(rep(rats.data$x[1],N), rats.data$Y[,1])
+points(rep(rats.data$x[2],N), rats.data$Y[,2])
+points(rep(rats.data$x[3],N), rats.data$Y[,3])
+points(rep(rats.data$x[4],N), rats.data$Y[,4])
+points(rep(rats.data$x[5],N), rats.data$Y[,5])
+abline(mod2$BUGSoutput$summary[,"mean"]["alpha.c"], 
+       mod2$BUGSoutput$summary[,"mean"]["beta.c"], col="green", lwd=2)
+grid()
+
+# comparison with frequentistic approach
+plot(rats.data$x,colMeans(rats.data$Y), lwd=4, xlab = "age (days)", ylab = "weight",
+     col="red", ylim=c(135,355))
+points(rep(rats.data$x[1],N), rats.data$Y[,1])
+points(rep(rats.data$x[2],N), rats.data$Y[,2])
+points(rep(rats.data$x[3],N), rats.data$Y[,3])
+points(rep(rats.data$x[4],N), rats.data$Y[,4])
+points(rep(rats.data$x[5],N), rats.data$Y[,5])
+abline(mod2$BUGSoutput$summary[,"mean"]["alpha.c"], 
+       mod2$BUGSoutput$summary[,"mean"]["beta.c"], col="green", lwd=8)
+abline(mean_alpha, mean_beta, col="lightblue", lwd=2)
+grid()
+
+```
+
+\newpage
+## Third model
+
+In this model we use the same priors of the first model, but in this case we fix the intercept to a global value.
+The fixed value for the intercept is 200 and we will see successively if this model is better or not respect to the first model (where the itercept is not fixed) 
+
+```{r}
+# third model: using the priors of the first model and fixing the intercept to a global value
+
+model3 <- function()
+{
+  for (i in 1:N) 
+  {
+    for (j in 1:T) 
+    {
+      Y[i,j] ~ dnorm(mu[i,j], tau.c)
+      mu[i, j] <- alpha.c + beta[i] * (x[j])
+    }
+    beta[i] ~ dnorm(beta.c, tau.beta)
+  }
+  alpha.c = 200
+  beta.c ~ dnorm(0, 1.0E-6)
+  tau.c ~ dgamma(1.0E-3, 1.0E-3)
+  tau.beta ~ dgamma(1.0E-3, 1.0E-3)
+  sigma.c <- 1.0/sqrt(tau.c)
+  xbar <- mean(x[])
+  alpha0 <- alpha.c - beta.c*xbar
+}
+
+## Read in the rats data for JAGS
+rats.data.list  <- list("Y", "x", "T", "N")
+
+## Name the JAGS parameters
+rats.params <- c("tau.c", "alpha.c", "tau.beta", "beta.c")
+
+## Define the starting values for JAGS
+rats.inits <- function(){
+  list(beta  = c(6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 
+                 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6),
+       beta.c = 10, 
+       tau.c = 1, tau.beta = 1)
+}
+
+mod3 <- jags(data=rats.data.list, inits=rats.inits, rats.params, n.chains=2, n.iter=10000, 
+             n.burnin=1000, n.thin = 1, model.file=model3, DIC=TRUE)
+
+mod3
+mod3$BUGSoutput$DIC
+
+# mean of the intercept
+mod3$BUGSoutput$summary[,"mean"]["alpha.c"]
+
+# mean of the slope
+mod3$BUGSoutput$summary[,"mean"]["beta.c"]
+
+plot(rats.data$x,colMeans(rats.data$Y), lwd=4, xlab = "age (days)", ylab = "weight",
+     col="red", ylim=c(135,355))
+points(rep(rats.data$x[1],N), rats.data$Y[,1])
+points(rep(rats.data$x[2],N), rats.data$Y[,2])
+points(rep(rats.data$x[3],N), rats.data$Y[,3])
+points(rep(rats.data$x[4],N), rats.data$Y[,4])
+points(rep(rats.data$x[5],N), rats.data$Y[,5])
+abline(mod3$BUGSoutput$summary[,"mean"]["alpha.c"], 
+       mod3$BUGSoutput$summary[,"mean"]["beta.c"], col="red", lwd=2)
+grid()
+
+# comparison with frequentistic approach
+plot(rats.data$x,colMeans(rats.data$Y), lwd=4, xlab = "age (days)", ylab = "weight",
+     col="red", ylim=c(135,355))
+points(rep(rats.data$x[1],N), rats.data$Y[,1])
+points(rep(rats.data$x[2],N), rats.data$Y[,2])
+points(rep(rats.data$x[3],N), rats.data$Y[,3])
+points(rep(rats.data$x[4],N), rats.data$Y[,4])
+points(rep(rats.data$x[5],N), rats.data$Y[,5])
+abline(mod3$BUGSoutput$summary[,"mean"]["alpha.c"], 
+       mod3$BUGSoutput$summary[,"mean"]["beta.c"], col="red", lwd=8)
+abline(mean_alpha, mean_beta, col="lightblue", lwd=2)
+grid()
+
+```
+
+\newpage
+## Forth model
+
+In this model we use the same priors of the first model, but in this case we fix the slope to a global value.
+The fixed value for the slope is 3.5 and we will see successively if this model is better or not respect to the first model (where the slope is not fixed) 
+
+```{r}
+# forth model: using the priors of the prior model and fixing the slope to a global value
+
+model4 <- function()
+{
+  for (i in 1:N) 
+  {
+    for (j in 1:T) 
+    {
+      Y[i,j] ~ dnorm(mu[i,j], tau.c)
+      mu[i, j] <- alpha[i] + beta.c * (x[j]);
+    }
+    alpha[i] ~ dnorm(alpha.c, tau.alpha);
+  }
+  alpha.c ~ dnorm(0, 1.0E-6)
+  beta.c <- 3.5
+  tau.c ~ dgamma(1.0E-3, 1.0E-3)
+  tau.alpha ~ dgamma(1.0E-3, 1.0E-3)
+  sigma.c <- 1.0/sqrt(tau.c)
+  xbar <- mean(x[])
+  alpha0 <- alpha.c - beta.c*xbar
+}
+
+## Read in the rats data for JAGS
+rats.data.list  <- list("Y", "x", "T", "N")
+
+## Name the JAGS parameters
+rats.params <- c("tau.c", "alpha.c", "tau.alpha","beta.c")
+
+
+## Define the starting values for JAGS
+rats.inits <- function(){
+  list(alpha = c(250, 250, 250, 250, 250, 250, 250, 250, 250, 250, 250, 250, 250, 250, 250, 
+                 250, 250, 250, 250, 250, 250, 250, 250, 250, 250, 250, 250, 250, 250, 250),
+       alpha.c = 150, 
+       tau.c = 1, tau.alpha = 1)
+}
+
+mod4 <- jags(data=rats.data.list, inits=rats.inits, rats.params, n.chains=2, n.iter=10000, 
+             n.burnin=1000, n.thin = 1, model.file=model4, DIC=TRUE)
+
+mod4
+mod4$BUGSoutput$DIC
+
+# mean of the intercept
+mod4$BUGSoutput$summary[,"mean"]["alpha.c"]
+
+# mean of the slope
+mod4$BUGSoutput$summary[,"mean"]["beta.c"]
+
+plot(rats.data$x,colMeans(rats.data$Y), lwd=4, xlab = "age (days)", ylab = "weight",
+     col="red", ylim=c(135,355))
+points(rep(rats.data$x[1],N), rats.data$Y[,1])
+points(rep(rats.data$x[2],N), rats.data$Y[,2])
+points(rep(rats.data$x[3],N), rats.data$Y[,3])
+points(rep(rats.data$x[4],N), rats.data$Y[,4])
+points(rep(rats.data$x[5],N), rats.data$Y[,5])
+abline(mod4$BUGSoutput$summary[,"mean"]["alpha.c"], 
+       mod4$BUGSoutput$summary[,"mean"]["beta.c"], col="yellow", lwd=2)
+grid()
+
+# comparison with frequentistic approach
+plot(rats.data$x,colMeans(rats.data$Y), lwd=4, xlab = "age (days)", ylab = "weight",
+     col="red", ylim=c(135,355))
+points(rep(rats.data$x[1],N), rats.data$Y[,1])
+points(rep(rats.data$x[2],N), rats.data$Y[,2])
+points(rep(rats.data$x[3],N), rats.data$Y[,3])
+points(rep(rats.data$x[4],N), rats.data$Y[,4])
+points(rep(rats.data$x[5],N), rats.data$Y[,5])
+abline(mod4$BUGSoutput$summary[,"mean"]["alpha.c"], 
+       mod4$BUGSoutput$summary[,"mean"]["beta.c"], col="yellow", lwd=8)
+abline(mean_alpha, mean_beta, col="lightblue", lwd=2)
+grid()
+
+```
+
+\newpage
+## Deviance Information Criterion, DIC
+
+```{r}
+DIC_array <- cbind(mod1.DIC=mod1$BUGSoutput$DIC,
+                   mod2.DIC=mod2$BUGSoutput$DIC,
+                   mod3.DIC=mod3$BUGSoutput$DIC,
+                   mod4.DIC=mod4$BUGSoutput$DIC
+)
+DIC_array
+
+
+# comparison of DIC
+DIC = c(mod1$BUGSoutput$DIC, mod2$BUGSoutput$DIC, mod3$BUGSoutput$DIC, mod4$BUGSoutput$DIC)
+barplot(DIC, col=c("blue", "green", "red", "yellow"), main="DIC comparison", 
+        names.arg = c("mod1", "mod2", "mod3", "mod4"), ylim=c(0,1650))
+text(0.67, 1150,round(mod1$BUGSoutput$DIC,3))
+text(1.9, 1150, round(mod2$BUGSoutput$DIC,3))
+text(3.1, 1610, round(mod3$BUGSoutput$DIC,3))
+text(4.3, 1520, round(mod4$BUGSoutput$DIC,3))
+
+```
+The first and the second model present similar DIC, even if the second model has the smallest value. The third and forth model instead present values of DIC higher respect to the previous models. 
+
+\newpage
+## Analysis based on the first model 
+
+From the theory of Markov chains, we expect our chains to eventually converge to the stationary distribution, which is also our
+target distribution. However, there is no guarantee that our chain has converged after a given number of iterations.
+We will check the convergence through some tools 
+
+```{r}
+# let's see every parameter individually through traceplot, histogram, behaviour of 
+# the empirical mean and approximation error 
+
+# tau.c
+tau.c.chain <- mod1$BUGSoutput$sims.array[,1,"tau.c"]
+plot(tau.c.chain, xlab = "iterations", main="tau.c trace plot",type="l")
+par(mfrow=c(1,2))
+hist(tau.c.chain, main= "tau.c histogram", xlab = "tau.c")
+abline(v=mean(tau.c.chain), col="red", lwd=2)
+plot(cumsum(tau.c.chain)/(1:length(tau.c.chain)), type="l", ylab="",
+     main="behaviour empirical average", xlab="simulations")
+abline(h=mean(tau.c.chain), col="red", lwd=2)
+par(mfrow=c(1,1))
+
+# alpha.c
+alpha.c.chain <- mod1$BUGSoutput$sims.array[,1,"alpha.c"]
+plot(alpha.c.chain, xlab = "iterations", main="alpha.c trace plot",type="l")
+par(mfrow=c(1,2))
+hist(alpha.c.chain, main= "alpha.c histogram", xlab = "alpha.c")
+abline(v=mean(alpha.c.chain), col="red", lwd=2)
+plot(cumsum(alpha.c.chain)/(1:length(alpha.c.chain)), type="l", ylab="",
+     main="behaviour empirical average", xlab="simulations")
+abline(h=mean(alpha.c.chain), col="red", lwd=2)
+par(mfrow=c(1,1))
+
+# beta.c
+beta.c.chain <- mod1$BUGSoutput$sims.array[,1,"beta.c"]
+plot(beta.c.chain, xlab = "iterations", main="beta.c trace plot",type="l")
+par(mfrow=c(1,2))
+hist(beta.c.chain, main= "beta.c histogram", xlab = "beta.c")
+abline(v=mean(beta.c.chain), col="red", lwd=2)
+plot(cumsum(beta.c.chain)/(1:length(beta.c.chain)), type="l", ylab="",
+     main="behaviour empirical average", xlab="simulations")
+abline(h=mean(beta.c.chain), col="red", lwd=2)
+par(mfrow=c(1,1))
+
+# tau.alpha
+tau.alpha.chain <- mod1$BUGSoutput$sims.array[,1,"tau.alpha"]
+plot(tau.alpha.chain, xlab = "iterations", main="tau.alpha trace plot",type="l")
+par(mfrow=c(1,2))
+hist(tau.alpha.chain, main= "tau.alpha histogram", xlab = "tau.alpha")
+abline(v=mean(tau.alpha.chain), col="red", lwd=2)
+plot(cumsum(tau.alpha.chain)/(1:length(tau.alpha.chain)), type="l", ylab="",
+     main="behaviour empirical average", xlab="simulations")
+abline(h=mean(tau.alpha.chain), col="red", lwd=2)
+par(mfrow=c(1,1))
+
+# tau.beta
+tau.beta.chain <- mod1$BUGSoutput$sims.array[,1,"tau.beta"]
+plot(tau.beta.chain, xlab = "iterations", main="tau.beta trace plot",type="l")
+par(mfrow=c(1,2))
+hist(tau.beta.chain, main= "tau.beta histogram", xlab = "tau.beta")
+abline(v=mean(tau.beta.chain), col="red", lwd=2)
+plot(cumsum(tau.beta.chain)/(1:length(tau.beta.chain)), type="l", ylab="",
+     main="behaviour empirical average", xlab="simulations")
+abline(h=mean(tau.beta.chain), col="red", lwd=2)
+par(mfrow=c(1,1))
+
+```
+
+```{r}
+# Instead of seeing every parameter individually, we can analyze 
+# all the parameters in a single plot  
+
+# use of the library ggmcmc that allows us to work with ggs object
+mod1.fit.gg <- ggs(as.mcmc(mod1))
+
+# histograms of the parameters
+ggs_histogram(mod1.fit.gg)
+ggs_density(mod1.fit.gg)
+ggs_traceplot(mod1.fit.gg)
+ggs_running(mod1.fit.gg)
+
+```
+
+Monitoring autocorrelations is also very useful since low or high values indicate fast or slow convergence, respectively.
+
+The lag $k$ autocorrelation $\rho_k$ is the correlation between every draw and its $k$th lag:
+$$\rho_k = \frac{\sum_{i=1}^{n-k}(x_i - \bar{x})(x_{i+k} - \bar{x})}{\sum_{i=1}^{n}(x_i - \bar{x})^2}$$ 
+We would expect the $k$th lag autocorrelation to be smaller as $k$ increases
+
+```{r}
+ggs_autocorrelation(mod1.fit.gg)
+
+```
+
+```{r}
+# correlation 
+mod1.parameters = cbind(alpha.c.chain, beta.c.chain, 
+                        tau.c.chain, tau.alpha.chain, tau.beta.chain)
+correlation=cor(mod1.parameters)
+correlation
+corrplot.mixed(correlation)
+
+```
+
+\newpage
+## Prediction 
+
+```{r}
+prediction <- function(x){
+  alpha <- rep(NA, 9000)
+  beta <- rep(NA, 9000)
+  y.pred <- rep(NA, 9000)
+  for(i in 1:9000){
+    alpha[i] = rnorm(1,alpha.c.chain[i], tau.alpha.chain[i])
+    beta[i] = rnorm(1,beta.c.chain[i], tau.beta.chain[i])
+    y.pred[i] = alpha[i]+beta[i]*x
+  }
+  return(y.pred)
+}
+
+
+# mean with age egual to 8
+mean(prediction(8))
+
+# mean with age egual to 15
+mean(prediction(15))
+
+# mean with age egual to 22
+mean(prediction(22))
+
+# mean with age egual to 29
+mean(prediction(29))
+
+# mean with age egual to 36
+mean(prediction(36))
+```
+
